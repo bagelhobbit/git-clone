@@ -11,7 +11,6 @@ fn main() {
 
     match command {
         _ if command == "init" => {
-            println!("Creating init directory");
             init::create_git_dir().unwrap();
             println!(
                 "Initialized empty Git repository in {}",
@@ -19,13 +18,18 @@ fn main() {
             )
         }
         _ if command == "cat-file" => {
-            // assume `-p` for now
             // TODO: support (at least) -p, -t, -s
-            if args.len() >= 3 {
-                objects::cat_file(&args[2]);
+            if args.len() >= 4 {
+                let params = objects::parse_args(&args[2], &args[3]);
+                match params {
+                    Ok((flag, hash)) => objects::cat_file(flag, &hash),
+                    Err(e) => println!("{}", e),
+                };
             } else {
-                // TODO: print usage?
-                println!("Please provide an object id")
+                println!("usage: cat-file (-t | -s | -p) <object>\n");
+                println!("    -t\t\tshow the object type");
+                println!("    -s\t\tshow the object size");
+                println!("    -p\t\tPretty print object's contents");
             }
         }
         _ => println!("{} is not recognized as a valid command", command),

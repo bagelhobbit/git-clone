@@ -1,12 +1,36 @@
+use flate2::read::ZlibDecoder;
+use std::fmt;
 use std::fs;
 use std::io::Read;
 use std::str;
-use flate2::read::ZlibDecoder;
 
-// TODO: support other methods of specify commits,
-// for example by short hash or refname
-// https://git-scm.com/docs/gitrevisions
-pub fn cat_file(object_hash: &str) {
+#[derive(Debug)]
+pub enum CatFlags {
+    Print,
+    Type,
+    Size,
+}
+
+#[derive(Debug)]
+enum Object {
+    Blob,
+    Tree,
+    Commit,
+}
+
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Object::Blob => write!(f, "blob"),
+            Object::Tree => write!(f, "tree"),
+            Object::Commit => write!(f, "commit"),
+        }
+    }
+}
+
+// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+
+pub fn cat_file(flag: CatFlags, object_hash: &str) {
     let object_dir = ".git/objects/";
     // The first 2 characters of the hash is the directory the object is stored in
     let hash_dir = &object_hash[..2];
@@ -14,23 +38,67 @@ pub fn cat_file(object_hash: &str) {
     let filename = &object_hash[2..];
     let path = format!("{}{}/{}", &object_dir, &hash_dir, &filename);
 
-    // A blob is a zlib compressed file of a header and the file contents
-    // A tree is ...
-    // A commit object is ...
     let git_object = fs::read(&path).expect("Could not read object file");
-
     let mut decoder = ZlibDecoder::new(&git_object[..]);
-    let mut decompressed = String::new();
+    let mut decompressed: Vec<u8> = Vec::new();
+
     // Assume file is valid
-    decoder.read_to_string(&mut decompressed).unwrap();
+    decoder.read_to_end(&mut decompressed).unwrap();
+    println!("{:?}", decompressed);
 
     // An object header is the type of object, a space, the size of the contents in bytes, then a null byte
-    // Assuming the object is a blob
-    // TODO: check header types
-    let mut split = decompressed.as_bytes().split(|num| num == &0u8);
-    let _header = split.next().unwrap();
-    let content = split.next().unwrap();
+    let mut split = decompressed.split(|num| num == &0u8);
+    let header = split.next().unwrap();
+    println!("{:?}", str::from_utf8(&header).unwrap());
+    let object_type = get_header_type(&header);
 
-    println!("{:?}", &_header);
-    println!("{}", str::from_utf8(&content).unwrap());
+    match flag {
+        CatFlags::Print => {
+            // Assume the file has valid contents
+            // TODO: check header types
+
+            // A blob is a zlib compressed file of a header and the file contents
+            // A tree is a zlib compressed file of a header and  ??? a list of modes and files (null terminated lines?) TODO: read all lines, see output.txt
+            // A commit object is a zlib compressed file of a header and the commit contents
+            let content = split.next().unwrap();
+            print!("{}", str::from_utf8(&content).unwrap());
+        }
+        CatFlags::Type => println!("{}", object_type),
+        CatFlags::Size => {
+            // space (' ') is 32(dec) in ascii
+            let mut split = header.split(|c| c == &32u8);
+            let _ = split.next();
+            let header_size = split.next().unwrap();
+            println!("{}", str::from_utf8(&header_size).unwrap());
+        }
+    };
+}
+
+// TODO: support other methods to specify commits,
+// for example by short hash or refname
+// https://git-scm.com/docs/gitrevisions
+pub fn parse_args(flag: &str, hash: &str) -> Result<(CatFlags, String), String> {
+    let cat_flag = match flag {
+        _ if flag == "-p" => Ok(CatFlags::Print),
+        _ if flag == "-t" => Ok(CatFlags::Type),
+        _ if flag == "-s" => Ok(CatFlags::Size),
+        _ => Err(format!("{} is not recognized as a valid option", flag)),
+    };
+
+    return Ok((cat_flag?, hash.to_owned()));
+}
+
+fn get_header_type(header: &[u8]) -> Object {
+    // space (' ') is 32(dec) in ascii
+    let mut split = header.split(|c| c == &32u8);
+    let header_type = split.next().expect("Invalid header");
+
+    let tmp = str::from_utf8(&header_type).unwrap();
+
+    match tmp {
+        _ if tmp == "blob" => return Object::Blob,
+        _ if tmp == "tree" => return Object::Tree,
+        _ if tmp == "commit" => return Object::Commit,
+        _ => panic!("Invalid header"),
+    };
 }
