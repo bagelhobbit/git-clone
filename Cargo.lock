@@ -38,6 +38,7 @@ name = "git_clone"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "sha1",
 ]
 
 [[package]]
@@ -54,3 +55,9 @@ checksum = "aa679ff6578b1cddee93d7e82e263b94a575e0bfced07284eb0c037c1d2416a5"
 dependencies = [
  "adler32",
 ]
+
+[[package]]
+name = "sha1"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2579985fda508104f7587689507983eadd6a6e84dd35d6d115361f530916fa0d"

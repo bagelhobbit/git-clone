@@ -1,11 +1,11 @@
 use std::env;
 
+mod cat_file;
+mod hash_object;
 mod init;
-mod objects;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("{:?}", args);
 
     let command = &args[1];
 
@@ -18,11 +18,11 @@ fn main() {
             )
         }
         _ if command == "cat-file" => {
-            // TODO: support (at least) -p, -t, -s
             if args.len() >= 4 {
-                let params = objects::parse_args(&args[2], &args[3]);
+                let params = cat_file::parse_args(&args[2], &args[3]);
                 match params {
-                    Ok((flag, hash)) => objects::cat_file(flag, &hash),
+                    // cat_file output has newlines included, so don't reprint them here
+                    Ok((flag, hash)) => print!("{}", cat_file::cat_file(flag, &hash)),
                     Err(e) => println!("{}", e),
                 };
             } else {
@@ -30,6 +30,19 @@ fn main() {
                 println!("    -t\t\tshow the object type");
                 println!("    -s\t\tshow the object size");
                 println!("    -p\t\tPretty print object's contents");
+            }
+        }
+        _ if command == "hash-object" => {
+            // TODO: support `-t <type>`
+            if args.len() >= 4 {
+                if args[2] == "-w" {
+                    println!("{}", hash_object::write_hash_object(&args[3]))
+                }
+            } else if args.len() >= 3 {
+                println!("{}", hash_object::hash_object(&args[2]))
+            } else {
+                println!("usage: hash-object [-w] <file>\n");
+                println!("    -w\t\twrite the object into the object database");
             }
         }
         _ => println!("{} is not recognized as a valid command", command),
