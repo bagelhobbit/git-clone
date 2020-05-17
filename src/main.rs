@@ -3,6 +3,8 @@ use std::env;
 mod cat_file;
 mod hash_object;
 mod init;
+mod ls_tree;
+mod object_util;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -43,6 +45,14 @@ fn main() {
             } else {
                 println!("usage: hash-object [-w] <file>\n");
                 println!("    -w\t\twrite the object into the object database");
+            }
+        }
+        _ if command == "ls-tree" => {
+            // TODO: support some flags, ex. -d, -r, -t
+            if args.len() >= 3 {
+                print!("{}", ls_tree::ls_tree(&args[2]))
+            } else {
+                println!("usage: ls-tree <object>\n");
             }
         }
         _ => println!("{} is not recognized as a valid command", command),

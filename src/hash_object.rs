@@ -5,10 +5,6 @@ use std::io::Write;
 use std::str;
 
 /// Returns the SHA1 hash of the passed file.
-///
-/// # Arguments
-///
-/// * `filepath` - file to hash
 pub fn hash_object(filepath: &str) -> std::string::String {
     let file = fs::read(filepath).expect("Unable to read file");
     // Assume a valid UTF-8 file
@@ -24,10 +20,6 @@ pub fn hash_object(filepath: &str) -> std::string::String {
 
 /// Like `hash_object` returns the SHA1 hash of the passed file,
 /// but also writes the object to the object database.
-///
-/// # Arguments
-///
-/// * `filepath` - file to hash
 pub fn write_hash_object(filepath: &str) -> std::string::String {
     let file = fs::read(filepath).expect("Unable to read file");
     // Assume a valid UTF-8 file
@@ -46,6 +38,7 @@ pub fn write_hash_object(filepath: &str) -> std::string::String {
     let out_dir_path = format!("gitrs/objects/{}", &out_dir);
     let out_path = format!("{}/{}", &out_dir_path, &out_filename);
 
+    //TODO: check if directory/file was already created
     fs::create_dir(&out_dir_path).expect("Could not create new directory for object database");
     let out_file = fs::File::create(&out_path).expect("Could not create object file");
 
