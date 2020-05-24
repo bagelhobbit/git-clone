@@ -15,7 +15,7 @@ pub fn create_git_dir() -> io::Result<()> {
         }
     }
     // See docs/InitFiles.md for a general description of the file structure being created
-    fs::create_dir(format!("{}hooks", dir))?; // TODO: Add sample hook files
+    fs::create_dir(format!("{}hooks", dir))?;
     fs::create_dir(format!("{}info", dir))?;
     fs::create_dir(format!("{}objects", dir))?;
     fs::create_dir(format!("{}objects/info", dir))?;

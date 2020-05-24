@@ -42,7 +42,7 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
 
     for section in split {
         if section.len() > 0 {
-            hashes.push(to_hex_string(&section[..20]));
+            hashes.push(object_util::to_hex_string(&section[..20]));
             if section.len() > 20 {
                 // Look for the space that separates the permissions from the filename
                 // We don't want to index into the hash so use a a slice to go past the hash bytes
@@ -65,13 +65,4 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
     }
 
     formatted_tree
-}
-
-fn to_hex_string(bytes: &[u8]) -> String {
-    let mut hex_string = String::new();
-    for item in bytes {
-        // Zero pad any single digit hex values
-        hex_string += &format!("{:0>2x}", item);
-    }
-    hex_string
 }

@@ -25,7 +25,6 @@ pub fn cat_file(flag: CatFlags, object_hash: &str) -> String {
     let git_object = object_util::read_object_file(&object_hash);
     let decoded = object_util::decode_object(git_object);
 
-    // TODO: move reading/parsing of header into utils? Use header struct instead of methods?
     let mut split = decoded.split(|num| num == &0u8);
     let header = split.next().unwrap();
     let object_type = object_util::get_header_type(&header);
@@ -45,9 +44,6 @@ pub fn cat_file(flag: CatFlags, object_hash: &str) -> String {
     }
 }
 
-// TODO: support other methods to specify commits,
-// for example by short hash or refname
-// https://git-scm.com/docs/gitrevisions
 /// Parse arguments for `cat_file`
 pub fn parse_args(flag: &str, hash: &str) -> Result<(CatFlags, String), String> {
     let cat_flag = match flag {

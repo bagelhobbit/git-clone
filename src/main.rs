@@ -5,6 +5,7 @@ mod hash_object;
 mod init;
 mod ls_tree;
 mod object_util;
+mod write_tree;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -35,7 +36,6 @@ fn main() {
             }
         }
         _ if command == "hash-object" => {
-            // TODO: support `-t <type>`
             if args.len() >= 4 {
                 if args[2] == "-w" {
                     println!("{}", hash_object::write_hash_object(&args[3]))
@@ -48,11 +48,22 @@ fn main() {
             }
         }
         _ if command == "ls-tree" => {
-            // TODO: support some flags, ex. -d, -r, -t
             if args.len() >= 3 {
                 print!("{}", ls_tree::ls_tree(&args[2]))
             } else {
                 println!("usage: ls-tree <object>\n");
+            }
+        }
+        _ if command == "write-tree" => {
+            if args.len() >= 3 {
+                if args[2] == "--missing-ok" {
+                    println!("{}", write_tree::write_tree(true));
+                } else {
+                    println!("usage: write-tree [--missing-ok]\n");
+                    println!("    --missing-ok\t\tallow missing objects");
+                }
+            } else {
+                println!("{}", write_tree::write_tree(false));
             }
         }
         _ => println!("{} is not recognized as a valid command", command),

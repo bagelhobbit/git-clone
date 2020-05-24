@@ -1,9 +1,13 @@
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use std::fmt;
 use std::fs;
-use std::str;
-use std::vec::Vec;
 use std::io::Read;
+use std::io::Write;
+use std::path::Path;
+use std::str;
+use std::string::String;
+use std::vec::Vec;
 
 /// The possible types for a git object
 ///
@@ -57,17 +61,44 @@ pub fn get_header_size(header: &[u8]) -> &str {
     str::from_utf8(&header_size).unwrap()
 }
 
-/// Given an object hash, return the files contents
-pub fn read_object_file(object_hash: &str) -> Vec<u8> {
+pub fn get_object_path(object_hash: &str) -> String {
     let object_dir = "gitrs/objects/";
     // let object_dir = ".git/objects/";
     // The first 2 characters of the hash is the directory the object is stored in
     let hash_dir = &object_hash[..2];
     // The remaing characters are the filename
     let filename = &object_hash[2..];
-    let path = format!("{}{}/{}", &object_dir, &hash_dir, &filename);
+    format!("{}{}/{}", &object_dir, &hash_dir, &filename)
+}
 
-    fs::read(&path).expect("Could not read object file")
+/// Given an object hash, return the files contents
+pub fn read_object_file(object_hash: &str) -> Vec<u8> {
+    let path = get_object_path(object_hash);
+    fs::read(&path).expect(&format!("Could not read object file: {}", path))
+}
+
+pub fn write_object_file(object_hash: &str, store: &[u8]) {
+    // Use first 2 digits as the direcectory, and the rest as the file name
+    let out_dir = &object_hash[..2];
+    let out_filename = &object_hash[2..];
+    let out_dir_path = format!("gitrs/objects/{}", &out_dir);
+    let out_path = format!("{}/{}", &out_dir_path, &out_filename);
+
+    let dir_exists = Path::new(&out_dir_path).exists();
+    let path_exists = Path::new(&out_path).exists();
+
+    if !dir_exists {
+        fs::create_dir(&out_dir_path).expect("Could not create new directory for object database");
+    }
+
+    if !path_exists {
+        let out_file = fs::File::create(&out_path).expect("Could not create object file");
+
+        let mut encoder = ZlibEncoder::new(out_file, flate2::Compression::default());
+        encoder
+            .write_all(store)
+            .expect("Could not write object file");
+    }
 }
 
 /// Decode/decompress a Zlib compressed byte sequence
@@ -79,4 +110,16 @@ pub fn decode_object(object: Vec<u8>) -> Vec<u8> {
     decoder.read_to_end(&mut decompressed).unwrap();
 
     decompressed
+}
+
+/// Converts a u8 byte array to a string of hex bytes
+///
+/// Single digits are zero padded
+pub fn to_hex_string(bytes: &[u8]) -> String {
+    let mut hex_string = String::new();
+    for item in bytes {
+        // Zero pad any single digit hex values
+        hex_string += &format!("{:0>2x}", item);
+    }
+    hex_string
 }
