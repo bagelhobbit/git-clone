@@ -10,6 +10,11 @@ mod write_tree;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    if args.len() == 1 {
+        println!("usage: gitrs <command> [<args>]");
+        return;
+    }
+
     let command = &args[1];
 
     match command {

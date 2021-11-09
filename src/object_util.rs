@@ -61,9 +61,9 @@ pub fn get_header_size(header: &[u8]) -> &str {
     str::from_utf8(&header_size).unwrap()
 }
 
+/// Given an object hash, return its relative path 
 pub fn get_object_path(object_hash: &str) -> String {
     let object_dir = "gitrs/objects/";
-    // let object_dir = ".git/objects/";
     // The first 2 characters of the hash is the directory the object is stored in
     let hash_dir = &object_hash[..2];
     // The remaing characters are the filename
@@ -77,6 +77,10 @@ pub fn read_object_file(object_hash: &str) -> Vec<u8> {
     fs::read(&path).expect(&format!("Could not read object file: {}", path))
 }
 
+/// Write the given store out to the object database, using the object has as its key
+/// 
+/// A store consists of a header and the content to be stored
+/// A header is the object type and length of the content
 pub fn write_object_file(object_hash: &str, store: &[u8]) {
     // Use first 2 digits as the direcectory, and the rest as the file name
     let out_dir = &object_hash[..2];

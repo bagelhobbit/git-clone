@@ -1,6 +1,9 @@
 use std::fs;
 use std::io;
 
+/// Create a new gitrs directory.
+/// 
+/// This will create an empty file structure as well as some default files for configuration
 pub fn create_git_dir() -> io::Result<()> {
     let dir = "gitrs/";
     match fs::create_dir(dir) {
