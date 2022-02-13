@@ -52,6 +52,10 @@ pub fn get_header_type(header: &[u8]) -> Object {
 }
 
 /// Given a git header, returns the size of an object's contents
+///
+/// # Format
+///
+/// An object header is the type of object, a space, the size of the contents in bytes, then a null byte
 pub fn get_header_size(header: &[u8]) -> &str {
     // space (' ') is 32(dec) in ascii
     let mut split = header.split(|c| c == &32u8);
@@ -61,7 +65,7 @@ pub fn get_header_size(header: &[u8]) -> &str {
     str::from_utf8(&header_size).unwrap()
 }
 
-/// Given an object hash, return its relative path 
+/// Given an object hash, return its relative path
 pub fn get_object_path(object_hash: &str) -> String {
     let object_dir = "gitrs/objects/";
     // The first 2 characters of the hash is the directory the object is stored in
@@ -78,7 +82,7 @@ pub fn read_object_file(object_hash: &str) -> Vec<u8> {
 }
 
 /// Write the given store out to the object database, using the object has as its key
-/// 
+///
 /// A store consists of a header and the content to be stored
 /// A header is the object type and length of the content
 pub fn write_object_file(object_hash: &str, store: &[u8]) {
@@ -126,4 +130,66 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
         hex_string += &format!("{:0>2x}", item);
     }
     hex_string
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_header_type_with_blob() {
+        let header = [0x62, 0x6C, 0x6F, 0x62, 32u8, 0x31, 0x35, 0x0];
+        assert_eq!(Object::Blob, get_header_type(&header));
+    }
+
+    #[test]
+    fn test_get_header_type_with_tree() {
+        let header = [0x74, 0x72, 0x65, 0x65, 32u8, 0x31, 0x35, 0x0];
+        assert_eq!(Object::Tree, get_header_type(&header));
+    }
+
+    #[test]
+    fn test_get_header_type_with_commit() {
+        let header = [0x63, 0x6F, 0x6D, 0x6D, 0x69, 0x74, 32u8, 0x31, 0x35, 0x0];
+        assert_eq!(Object::Commit, get_header_type(&header));
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid header")]
+    fn test_get_header_type_with_invalid_object() {
+        let header = [0x65, 32u8, 0x31, 0x35, 0x0];
+        let _ = get_header_type(&header);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid header")]
+    fn test_get_header_type_with_invalid_header() {
+        let header = [0x62, 0x6C, 0x6F, 0x62, 0x0];
+        let _ = get_header_type(&header);
+    }
+
+    #[test]
+    fn test_get_header_size_when_valid() {
+        let header = [0x62, 0x6C, 0x6F, 0x62, 32u8, 0x31, 0x35, 0x0];
+        assert_eq!("15\0", get_header_size(&header))
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid header")]
+    fn test_get_header_size_with_short_header() {
+        let header = [0x62, 0x6C, 0x6F, 0x62];
+        let _ = get_header_size(&header);
+    }
+
+    #[test]
+    fn test_get_header_size_with_extra_spaces() {
+        let header = [0x62, 0x6C, 0x6F, 0x62, 32u8, 32u8, 0x31, 0x35, 0x0];
+        assert_eq!("", get_header_size(&header));
+    }
+
+    #[test]
+    fn test_to_hex_string() {
+        let array = [1u8, 2u8, 3u8, 45u8];
+        assert_eq!("0102032d", to_hex_string(&array));
+    }
 }

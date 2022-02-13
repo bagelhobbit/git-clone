@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 
 /// Create a new gitrs directory.
-/// 
+///
 /// This will create an empty file structure as well as some default files for configuration
 pub fn create_git_dir() -> io::Result<()> {
     let dir = "gitrs/";
@@ -33,6 +33,15 @@ pub fn create_git_dir() -> io::Result<()> {
         "Unnamed repository; edit this file 'description' to name the repository.\n",
     )?;
     fs::write(format!("{}HEAD", dir), "ref: refs/heads/master\n")?;
+
+    // Index header:
+    // DIRC (magic number),
+    // 3 null bytes, 02 (4-byte version),
+    // 4 null bytes (4-byte file count)
+    let index_content = [
+        0x44, 0x49, 0x52, 0x43, 0x0, 0x0, 0x0, 0x02, 0x0, 0x0, 0x0, 0x0,
+    ];
+    fs::write(format!("{}index", dir), index_content)?;
     Ok(())
 }
 fn create_and_copy_to_file(from: &str, to: &str) -> io::Result<()> {

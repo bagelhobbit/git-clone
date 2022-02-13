@@ -12,7 +12,7 @@ pub fn ls_tree(object_hash: &str) -> String {
 }
 
 /// Convience method to display a tree.
-/// 
+///
 /// If you have the object's hash, use `ls_tree` instead.
 pub fn format_tree(decoded: &Vec<u8>) -> String {
     let mut formatted_tree = String::new();
@@ -61,7 +61,10 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
         let decoded = object_util::decode_object(git_object);
         let header = decoded.split(|num| num == &0u8).next().unwrap();
         let header_type = object_util::get_header_type(&header);
-        formatted_tree += &format!("{:0>6} {} {}\t{}\n", permissions[i], header_type, hashes[i], filenames[i]);
+        formatted_tree += &format!(
+            "{:0>6} {} {}\t{}\n",
+            permissions[i], header_type, hashes[i], filenames[i]
+        );
     }
 
     formatted_tree
