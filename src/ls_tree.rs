@@ -33,7 +33,16 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
     let mut hashes = Vec::<String>::new();
 
     // Handle first section since it doesn't start with a hash
-    let first_section = split.next().unwrap();
+    let mut first_section = split.next().unwrap();
+
+    // Make sure first index can find something and we don't index into an empty array
+    // There's probably a better way to fix this by not 'unwrap'-ing everything, but I don't want to figure it out
+    first_section = if first_section == [] {
+        &[32u8]
+    } else {
+        first_section
+    };
+
     // Look for the space that separates the permissions from the filename
     let first_index = first_section.iter().position(|&num| num == 32u8).unwrap();
     permissions.push(str::from_utf8(&first_section[..first_index]).unwrap());
@@ -68,4 +77,15 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
     }
 
     formatted_tree
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_tree_handles_empty_tree() {
+        let decoded = vec![116u8, 114, 101, 101, 32, 48, 0];
+        assert_eq!("", format_tree(&decoded));
+    }
 }
