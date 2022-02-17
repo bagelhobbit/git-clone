@@ -11,7 +11,6 @@ pub fn create_git_dir() -> io::Result<()> {
         Err(e) => {
             if e.kind() == io::ErrorKind::AlreadyExists {
                 println!("Directory has already been initialized. Nothing left to do");
-                ()
             } else {
                 return Err(e);
             }

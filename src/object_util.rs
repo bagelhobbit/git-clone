@@ -41,14 +41,14 @@ pub fn get_header_type(header: &[u8]) -> Object {
     let mut split = header.split(|c| c == &32u8);
     let header_type = split.next().expect("Invalid header");
 
-    let tmp = str::from_utf8(&header_type).unwrap();
+    let tmp = str::from_utf8(header_type).unwrap();
 
     match tmp {
-        _ if tmp == "blob" => return Object::Blob,
-        _ if tmp == "tree" => return Object::Tree,
-        _ if tmp == "commit" => return Object::Commit,
+        _ if tmp == "blob" => Object::Blob,
+        _ if tmp == "tree" => Object::Tree,
+        _ if tmp == "commit" => Object::Commit,
         _ => panic!("Invalid header"),
-    };
+    }
 }
 
 /// Given a git header, returns the size of an object's contents
@@ -62,7 +62,7 @@ pub fn get_header_size(header: &[u8]) -> &str {
     let _ = split.next().expect("Invalid header");
     let header_size = split.next().expect("Invalid header");
 
-    str::from_utf8(&header_size).unwrap()
+    str::from_utf8(header_size).unwrap()
 }
 
 /// Given an object hash, return its relative path
@@ -78,7 +78,7 @@ pub fn get_object_path(object_hash: &str) -> String {
 /// Given an object hash, return the files contents
 pub fn read_object_file(object_hash: &str) -> Vec<u8> {
     let path = get_object_path(object_hash);
-    fs::read(&path).expect(&format!("Could not read object file: {}", path))
+    fs::read(&path).unwrap_or_else(|_| panic!("Could not read object file: {}", path))
 }
 
 /// Write the given store out to the object database, using the object has as its key

@@ -14,7 +14,7 @@ pub fn ls_tree(object_hash: &str) -> String {
 /// Convience method to display a tree.
 ///
 /// If you have the object's hash, use `ls_tree` instead.
-pub fn format_tree(decoded: &Vec<u8>) -> String {
+pub fn format_tree(decoded: &[u8]) -> String {
     let mut formatted_tree = String::new();
 
     // A tree is a zlib compressed file of a header and a list of file information
@@ -23,7 +23,7 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
     let mut split = decoded.split(|num| num == &0u8);
 
     let header = split.next().unwrap();
-    let object_type = object_util::get_header_type(&header);
+    let object_type = object_util::get_header_type(header);
     if object_type != object_util::Object::Tree {
         return "fatal: not a tree object".to_owned();
     }
@@ -37,7 +37,7 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
 
     // Make sure first index can find something and we don't index into an empty array
     // There's probably a better way to fix this by not 'unwrap'-ing everything, but I don't want to figure it out
-    first_section = if first_section == [] {
+    first_section = if first_section.is_empty() {
         &[32u8]
     } else {
         first_section
@@ -50,7 +50,7 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
     filenames.push(str::from_utf8(&first_section[(first_index + 1)..]).unwrap());
 
     for section in split {
-        if section.len() > 0 {
+        if !section.is_empty() {
             hashes.push(object_util::to_hex_string(&section[..20]));
             if section.len() > 20 {
                 // Look for the space that separates the permissions from the filename
@@ -69,7 +69,7 @@ pub fn format_tree(decoded: &Vec<u8>) -> String {
         let git_object = object_util::read_object_file(&hashes[i]);
         let decoded = object_util::decode_object(git_object);
         let header = decoded.split(|num| num == &0u8).next().unwrap();
-        let header_type = object_util::get_header_type(&header);
+        let header_type = object_util::get_header_type(header);
         formatted_tree += &format!(
             "{:0>6} {} {}\t{}\n",
             permissions[i], header_type, hashes[i], filenames[i]
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_format_tree_handles_empty_tree() {
-        let decoded = vec![116u8, 114, 101, 101, 32, 48, 0];
+        let decoded = [116u8, 114, 101, 101, 32, 48, 0];
         assert_eq!("", format_tree(&decoded));
     }
 }

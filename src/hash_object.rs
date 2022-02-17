@@ -31,7 +31,7 @@ pub fn write_hash_object(filepath: &str) -> std::string::String {
 
     let hash = Sha1::from(store.as_bytes()).hexdigest();
 
-    object_util::write_object_file(&hash, &store.as_bytes());
+    object_util::write_object_file(&hash, store.as_bytes());
 
-    return hash;
+    hash
 }

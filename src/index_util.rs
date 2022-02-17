@@ -123,7 +123,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
             uid: if uid == 0 { None } else { Some(uid) },
             guid: if guid == 0 { None } else { Some(guid) },
             size,
-            object_hash: String::from(object_util::to_hex_string(&hash)),
+            object_hash: object_util::to_hex_string(&hash),
             filename: String::from(filename),
         });
     }

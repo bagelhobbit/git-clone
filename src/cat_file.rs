@@ -22,25 +22,25 @@ pub enum CatFlags {
 /// * `flag` - Controls which property will be returned
 /// * `object_hash` - The object in the object database to read
 pub fn cat_file(flag: CatFlags, object_hash: &str) -> String {
-    let git_object = object_util::read_object_file(&object_hash);
+    let git_object = object_util::read_object_file(object_hash);
     let decoded = object_util::decode_object(git_object);
 
     let mut split = decoded.split(|num| num == &0u8);
     let header = split.next().unwrap();
-    let object_type = object_util::get_header_type(&header);
+    let object_type = object_util::get_header_type(header);
 
     match flag {
         CatFlags::Print => {
             // Assume the file has valid contents
             if object_type == Object::Tree {
-                return ls_tree::format_tree(&decoded);
+                ls_tree::format_tree(&decoded)
             } else {
                 let content = split.next().unwrap();
-                return str::from_utf8(&content).unwrap().to_owned();
+                return str::from_utf8(content).unwrap().to_owned();
             }
         }
         CatFlags::Type => return format!("{}\n", object_type),
-        CatFlags::Size => return format!("{}\n", object_util::get_header_size(&header)),
+        CatFlags::Size => return format!("{}\n", object_util::get_header_size(header)),
     }
 }
 
@@ -53,5 +53,5 @@ pub fn parse_args(flag: &str, hash: &str) -> Result<(CatFlags, String), String> 
         _ => Err(format!("{} is not recognized as a valid option", flag)),
     };
 
-    return Ok((cat_flag?, hash.to_owned()));
+    Ok((cat_flag?, hash.to_owned()))
 }
