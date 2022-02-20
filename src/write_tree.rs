@@ -6,7 +6,7 @@ use super::index_util;
 ///
 /// Returns the name of the new tree object or an error message
 pub fn write_tree(missing_ok: bool) -> std::string::String {
-    let result = index_util::write_index(missing_ok);
+    let result = index_util::write_index_to_tree(missing_ok);
     match result {
         Ok(s) => s,
         Err(e) => format!("error: {}", e),

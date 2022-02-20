@@ -1,38 +1,37 @@
 use super::object_util;
 use sha1::Sha1;
 use std::fs;
-use std::io::Read;
+use std::fs::OpenOptions;
+use std::io::{Error, Read, Write};
 use std::path::Path;
 use std::str;
 
 const INDEX_PATH: &str = "gitrs/index";
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct IndexHeader {
-    magic: String,
-    version: u32,
-    num_files: u32,
+    pub magic: String,
+    pub version: u32,
+    pub num_files: u32,
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct IndexFile {
-    ctime: u32,
-    ctime_fractions: u32,
-    mtime: u32,
-    mtime_fractions: u32,
-    dev: Option<u32>,
-    ino: Option<u32>,
-    permissions: String,
-    uid: Option<u32>,
-    guid: Option<u32>,
-    size: u32,
-    object_hash: String,
-    filename: String,
+    pub ctime: u32,
+    pub ctime_fractions: u32,
+    pub mtime: u32,
+    pub mtime_fractions: u32,
+    pub dev: Option<u32>,
+    pub ino: Option<u32>,
+    pub permissions: String,
+    pub uid: Option<u32>,
+    pub guid: Option<u32>,
+    pub size: u32,
+    pub object_hash: String,
+    pub filename: String,
 }
 
-/// Parse the index file and writes it to the store as a tree object
-///
-/// Returns the hash of the resulting object
+/// Parse the index file and return the index header and index files
 pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
     let mut file = fs::File::open(INDEX_PATH).expect("Could not read index file");
 
@@ -108,8 +107,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
         let mut nul_buf = vec![0; padding as usize].into_boxed_slice();
         file.read_exact(&mut nul_buf).expect("Invalid index format");
 
-        // First 2 bytes are always null, so we only need the last 2 bytes
-        let permissions = mode_to_permissions(&mode[2..]);
+        let permissions = mode_to_permissions(&mode);
         let filename = str::from_utf8(&filename_buf).unwrap();
 
         index_files.push(IndexFile {
@@ -134,7 +132,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
 /// Parses the index file and writes it to the store as a tree object
 ///
 /// Returns the hash of the resulting object
-pub fn write_index(missing_ok: bool) -> Result<String, String> {
+pub fn write_index_to_tree(missing_ok: bool) -> Result<String, String> {
     let (header, items) = parse_index()?;
 
     debug_assert_eq!(header.num_files as usize, items.len());
@@ -180,6 +178,96 @@ pub fn write_index(missing_ok: bool) -> Result<String, String> {
     Ok(hash)
 }
 
+/// Writes the given index structs back to the index file
+pub fn write_index(items: Vec<IndexFile>) -> Result<usize, Error> {
+    // https://doc.rust-lang.org/stable/std/fs/struct.OpenOptions.html#method.truncate
+
+    // Might want to create and replace the index file instead of overwriting it in case of errors
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(INDEX_PATH)
+        .expect("Could not open index file");
+
+    // Write magic number and version
+    file.write(&[0x44, 0x49, 0x52, 0x43, 0x0, 0x0, 0x0, 0x02])?;
+
+    let num_file = items.len() as u32;
+
+    // Write number of files as 4 byte number
+    file.write(&num_file.to_be_bytes())?;
+
+    for item in items.iter() {
+        // Write 6 32-bit (4-byte) info fields
+        // ctime seconds, ctime nanosecond fractions, mtime seconds, mtime nanosecond fractions, dev (null on windows), ino (null on windows)
+        file.write(&item.ctime.to_be_bytes())?;
+        file.write(&item.ctime_fractions.to_be_bytes())?;
+        file.write(&item.mtime.to_be_bytes())?;
+        file.write(&item.mtime_fractions.to_be_bytes())?;
+        match item.dev {
+            Some(x) => file.write(&x.to_be_bytes())?,
+            None => file.write(&[0, 0, 0, 0])?,
+        };
+        match item.ino {
+            Some(x) => file.write(&x.to_be_bytes())?,
+            None => file.write(&[0, 0, 0, 0])?,
+        };
+
+        // Write out mode
+        // 4-bits: object type (regular (1000), symlink(1010), gitlink(1110))
+        // 3-bits: unused
+        // 9-bit: permissions (755 or 644)
+        // assume regular file for now
+        file.write(&[1, 0, 0, 0, 0, 0, 0])?;
+
+        if item.permissions == "644" {
+            file.write(&[1, 1, 0, 1, 0, 0, 1, 0, 0])?;
+        } else {
+            file.write(&[1, 1, 1, 1, 0, 1, 1, 0, 1])?;
+        }
+
+        // Write 3 4-byte info fields
+        // uid (null on windows), guid (null on windows), file size
+        match item.uid {
+            Some(x) => file.write(&x.to_be_bytes())?,
+            None => file.write(&[0, 0, 0, 0])?,
+        };
+        match item.guid {
+            Some(x) => file.write(&x.to_be_bytes())?,
+            None => file.write(&[0, 0, 0, 0])?,
+        };
+        file.write(&item.size.to_be_bytes())?;
+
+        file.write(&hash_to_vec(&item.object_hash))?;
+
+        let filename_length = item.filename.len();
+        debug_assert_eq!(filename_length, (filename_length as u16) as usize);
+
+        let bytes = (filename_length as u16).to_be_bytes();
+        debug_assert_eq!(2, bytes.len());
+
+        // write flag bytes
+        // 1 bit assume valid
+        // 1 bit extended (must be 0 in version 2)
+        // 2 bit stage (during merge)
+        // 12 bit name length if the length is less than 0xFF; otherwise 0xFF
+        file.write(&[0b1_0_00, 0b0000, bytes[0], bytes[1]])?;
+
+        file.write(item.filename.as_bytes())?;
+        file.write(&[0])?;
+
+        // Write at least one NUL byte (and up to 8),
+        // The filename ends with a NUL-terminator, and is padded to the nearest multiple of 8 bytes (for the entry)
+        let bytes_written = 80; // bytes written for an entry
+        let total_bytes = bytes_written + filename_length + 1;
+        let padding = 8 - (total_bytes % 8);
+        let nul_buf = vec![0; padding as usize];
+        file.write(&nul_buf)?;
+    }
+
+    Ok(0 as usize)
+}
+
 /// Takes first 4 bytes and returns an unsigned int
 fn array_to_int(array: &[u8]) -> u32 {
     ((array[0] as u32) << 12)
@@ -215,6 +303,41 @@ fn flags_to_length(array: &[u8]) -> u16 {
     let low_bits = array[0] & 0b0000_1111;
 
     ((low_bits as u16) << 8) + (array[1] as u16)
+}
+
+/// Convert an object has to a vector for usable in the index file
+fn hash_to_vec(hash: &str) -> Vec<u8> {
+    let mut converted: Vec<u8> = Vec::new();
+    for char in hash.chars() {
+        // assume only hex compatible chars
+        let x = match char {
+            '0' => 0x0u8,
+            '1' => 0x1,
+            '2' => 0x2,
+            '3' => 0x3,
+            '4' => 0x4,
+            '5' => 0x5,
+            '6' => 0x6,
+            '7' => 0x7,
+            '8' => 0x8,
+            '9' => 0x9,
+            'A' | 'a' => 0xA,
+            'B' | 'b' => 0xB,
+            'C' | 'c' => 0xC,
+            'D' | 'd' => 0xD,
+            'E' | 'e' => 0xE,
+            'F' | 'f' => 0xF,
+            _ => panic!("Unsupported character"),
+        };
+        converted.push(x);
+    }
+
+    let chunks = converted.chunks(2);
+    let mut result: Vec<u8> = Vec::new();
+    for chunk in chunks.into_iter() {
+        result.push((chunk[0] << 4) + chunk[1]);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -256,5 +379,15 @@ mod tests {
     fn test_flags_to_length_average() {
         let array = [0b1111_0000, 0x0F];
         assert_eq!(15u16, flags_to_length(&array))
+    }
+
+    #[test]
+    fn test_hash_to_vec() {
+        let hash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        let bytes = vec![
+            0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60, 0xe5, 0x4b, 0xf8, 0xd6,
+            0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
+        ];
+        assert_eq!(bytes, hash_to_vec(hash));
     }
 }

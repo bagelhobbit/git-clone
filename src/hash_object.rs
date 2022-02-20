@@ -4,7 +4,7 @@ use std::fs;
 use std::str;
 
 /// Returns the SHA1 hash of the passed file.
-pub fn hash_object(filepath: &str) -> std::string::String {
+pub fn generate_hash(filepath: &str) -> std::string::String {
     let file = fs::read(filepath).expect("Unable to read file");
     // Assume a valid UTF-8 file
     let content = str::from_utf8(&file).unwrap();

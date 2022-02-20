@@ -2,9 +2,11 @@ use std::env;
 
 mod cat_file;
 mod hash_object;
+mod index_util;
 mod init;
 mod ls_tree;
 mod object_util;
+mod update_index;
 mod write_tree;
 
 fn main() {
@@ -46,7 +48,7 @@ fn main() {
                     println!("{}", hash_object::write_hash_object(&args[3]))
                 }
             } else if args.len() >= 3 {
-                println!("{}", hash_object::hash_object(&args[2]))
+                println!("{}", hash_object::generate_hash(&args[2]))
             } else {
                 println!("usage: hash-object [-w] <file>\n");
                 println!("    -w\t\twrite the object into the object database");
@@ -69,6 +71,20 @@ fn main() {
                 }
             } else {
                 println!("{}", write_tree::write_tree(false));
+            }
+        }
+        _ if command == "update-index" => {
+            if args.len() >= 4 {
+                if args[2] == "--add" {
+                    let result = match update_index::add_to_index(&args[3]) {
+                        Ok(s) => s,
+                        Err(s) => s,
+                    };
+
+                    if result == "" {
+                        println!("{}", result);
+                    }
+                }
             }
         }
         _ => println!("{} is not recognized as a valid command", command),
