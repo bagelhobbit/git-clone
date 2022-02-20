@@ -1,5 +1,7 @@
 use std::env;
 
+use update_index::update_index;
+
 mod cat_file;
 mod hash_object;
 mod index_util;
@@ -84,6 +86,16 @@ fn main() {
                     if result == "" {
                         println!("{}", result);
                     }
+                } 
+            }
+            else {
+                let result = match update_index() {
+                    Ok(s) => s,
+                    Err(s) => s,
+                };
+
+                if result == "" {
+                    println!("{}", result);
                 }
             }
         }

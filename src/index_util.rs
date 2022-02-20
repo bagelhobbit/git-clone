@@ -15,7 +15,7 @@ pub struct IndexHeader {
     pub num_files: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexFile {
     pub ctime: u32,
     pub ctime_fractions: u32,
@@ -25,7 +25,7 @@ pub struct IndexFile {
     pub ino: Option<u32>,
     pub permissions: String,
     pub uid: Option<u32>,
-    pub guid: Option<u32>,
+    pub gid: Option<u32>,
     pub size: u32,
     pub object_hash: String,
     pub filename: String,
@@ -62,7 +62,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
     let mut index_files = Vec::<IndexFile>::new();
 
     for _ in 0..num_file {
-        // Read 6 32-bit (4-byte) info fields
+        // Read 6 32-bit (24-byte) info fields
         // ctime seconds, ctime nanosecond fractions, mtime seconds, mtime nanosecond fractions, dev (null on windows), ino (null on windows)
         let mut info_fields = [0; 24];
         file.read_exact(&mut info_fields)
@@ -78,7 +78,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
         let mut mode = [0; 4];
         file.read_exact(&mut mode).expect("Invalid index format");
 
-        // read 3 4-byte info fields
+        // read 3 32-bit (12 bytes) info fields
         // uid (null on windows), guid (null on windows), file size
         let mut file_info = [0; 12];
         file.read_exact(&mut file_info)
@@ -119,7 +119,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
             ino: if ino == 0 { None } else { Some(ino) },
             permissions: String::from(permissions),
             uid: if uid == 0 { None } else { Some(uid) },
-            guid: if guid == 0 { None } else { Some(guid) },
+            gid: if guid == 0 { None } else { Some(guid) },
             size,
             object_hash: object_util::to_hex_string(&hash),
             filename: String::from(filename),
@@ -218,12 +218,12 @@ pub fn write_index(items: Vec<IndexFile>) -> Result<usize, Error> {
         // 3-bits: unused
         // 9-bit: permissions (755 or 644)
         // assume regular file for now
-        file.write(&[1, 0, 0, 0, 0, 0, 0])?;
+        file.write(&[0b1000, 0b0001])?;
 
         if item.permissions == "644" {
-            file.write(&[1, 1, 0, 1, 0, 0, 1, 0, 0])?;
+            file.write(&[0b10_10, 0b0_100])?;
         } else {
-            file.write(&[1, 1, 1, 1, 0, 1, 1, 0, 1])?;
+            file.write(&[0b11_10, 0b1_101])?;
         }
 
         // Write 3 4-byte info fields
@@ -232,7 +232,7 @@ pub fn write_index(items: Vec<IndexFile>) -> Result<usize, Error> {
             Some(x) => file.write(&x.to_be_bytes())?,
             None => file.write(&[0, 0, 0, 0])?,
         };
-        match item.guid {
+        match item.gid {
             Some(x) => file.write(&x.to_be_bytes())?,
             None => file.write(&[0, 0, 0, 0])?,
         };
@@ -241,24 +241,21 @@ pub fn write_index(items: Vec<IndexFile>) -> Result<usize, Error> {
         file.write(&hash_to_vec(&item.object_hash))?;
 
         let filename_length = item.filename.len();
-        debug_assert_eq!(filename_length, (filename_length as u16) as usize);
-
-        let bytes = (filename_length as u16).to_be_bytes();
-        debug_assert_eq!(2, bytes.len());
+        debug_assert!(filename_length <= 255);
 
         // write flag bytes
         // 1 bit assume valid
         // 1 bit extended (must be 0 in version 2)
         // 2 bit stage (during merge)
         // 12 bit name length if the length is less than 0xFF; otherwise 0xFF
-        file.write(&[0b1_0_00, 0b0000, bytes[0], bytes[1]])?;
+        file.write(&[0b1_0_00_0000, (filename_length as u8)])?;
 
         file.write(item.filename.as_bytes())?;
         file.write(&[0])?;
 
         // Write at least one NUL byte (and up to 8),
         // The filename ends with a NUL-terminator, and is padded to the nearest multiple of 8 bytes (for the entry)
-        let bytes_written = 80; // bytes written for an entry
+        let bytes_written = 62; // bytes written for an entry
         let total_bytes = bytes_written + filename_length + 1;
         let padding = 8 - (total_bytes % 8);
         let nul_buf = vec![0; padding as usize];
@@ -294,15 +291,13 @@ fn mode_to_permissions(array: &[u8]) -> &str {
 }
 
 /// Takes flag bytes and returns the length of the file name
-fn flags_to_length(array: &[u8]) -> u16 {
+fn flags_to_length(array: &[u8]) -> u8 {
     // 1 bit assume valid
     // 1 bit extended (must be 0 in version 2)
     // 2 bit stage (during merge)
-    // 12 bit name length if the length is less than 0xFF; otherwise 0xFF
+    // 12 bit name length, if the length is less than 0xFF; otherwise 0xFF
     // Mask off the upper half of the the first byte so we can correctly cast it
-    let low_bits = array[0] & 0b0000_1111;
-
-    ((low_bits as u16) << 8) + (array[1] as u16)
+    array[1]
 }
 
 /// Convert an object has to a vector for usable in the index file
@@ -369,16 +364,15 @@ mod tests {
     }
 
     #[test]
-    // this should probably be a failure since the length is over 0xFF, but thats not being enforced here
-    fn test_flags_to_length_long() {
-        let array = [0b1111_1000, 0x88];
-        assert_eq!(2184u16, flags_to_length(&array))
+    fn test_flags_to_length_max() {
+        let array = [0b1000_0000, 0xFF];
+        assert_eq!(255u8, flags_to_length(&array))
     }
 
     #[test]
     fn test_flags_to_length_average() {
-        let array = [0b1111_0000, 0x0F];
-        assert_eq!(15u16, flags_to_length(&array))
+        let array = [0b1000_0000, 0x0F];
+        assert_eq!(15u8, flags_to_length(&array))
     }
 
     #[test]
