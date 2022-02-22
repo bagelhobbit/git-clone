@@ -1,10 +1,10 @@
 use super::object_util;
 use sha1::Sha1;
-use std::fs;
 use std::fs::OpenOptions;
-use std::io::{Error, Read, Write};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::str;
+use std::{fs, io};
 
 const INDEX_PATH: &str = "gitrs/index";
 
@@ -75,7 +75,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
         let dev = array_to_int(&info_fields[16..20]);
         let ino = array_to_int(&info_fields[20..24]);
 
-        let mut mode = [0; 4];
+        let mut mode = [0; 2];
         file.read_exact(&mut mode).expect("Invalid index format");
 
         // read 3 32-bit (12 bytes) info fields
@@ -101,7 +101,7 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
 
         // Read at least one NUL byte (and up to 8),
         // the filename ends with a NUL-terminator, and is padded to the nearest multiple of 8 bytes (for the entry)
-        let bytes_read = 62; // bytes written for an entry
+        let bytes_read = 60; // bytes written for an entry
         let total_bytes = bytes_read + filename_length;
         let padding = 8 - (total_bytes % 8);
         let mut nul_buf = vec![0; padding as usize].into_boxed_slice();
@@ -127,6 +127,92 @@ pub fn parse_index() -> Result<(IndexHeader, Vec<IndexFile>), String> {
     }
 
     Ok((index_header, index_files))
+}
+
+/// Writes the given index structs back to the index file
+pub fn write_index(items: Vec<IndexFile>) -> io::Result<()> {
+    // https://doc.rust-lang.org/stable/std/fs/struct.OpenOptions.html#method.truncate
+
+    // Might want to create and replace the index file instead of overwriting it in case of errors
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(INDEX_PATH)
+        .expect("Could not open index file");
+
+    // Write magic number and version
+    file.write_all(&[0x44, 0x49, 0x52, 0x43, 0x0, 0x0, 0x0, 0x02])?;
+
+    let num_file = items.len() as u32;
+
+    // Write number of files as 4 byte number
+    file.write_all(&num_file.to_be_bytes())?;
+
+    for item in items.iter() {
+        // Write 6 32-bit (4-byte) info fields
+        // ctime seconds, ctime nanosecond fractions, mtime seconds, mtime nanosecond fractions, dev (null on windows), ino (null on windows)
+        file.write_all(&item.ctime.to_be_bytes())?;
+        file.write_all(&item.ctime_fractions.to_be_bytes())?;
+        file.write_all(&item.mtime.to_be_bytes())?;
+        file.write_all(&item.mtime_fractions.to_be_bytes())?;
+        match item.dev {
+            Some(x) => file.write_all(&x.to_be_bytes())?,
+            None => file.write_all(&[0, 0, 0, 0])?,
+        };
+        match item.ino {
+            Some(x) => file.write_all(&x.to_be_bytes())?,
+            None => file.write_all(&[0, 0, 0, 0])?,
+        };
+
+        // Write out mode
+        // 4-bits: object type (regular (1000), symlink(1010), gitlink(1110))
+        // 3-bits: unused
+        // 9-bit: permissions (755 or 644)
+        // assume regular file for now
+        file.write_all(&[0b1000_0001])?;
+
+        if item.permissions == "644" {
+            file.write_all(&[0b1010_0100])?;
+        } else {
+            file.write_all(&[0b1110_1101])?;
+        }
+
+        // Write 3 4-byte info fields
+        // uid (null on windows), guid (null on windows), file size
+        match item.uid {
+            Some(x) => file.write_all(&x.to_be_bytes())?,
+            None => file.write_all(&[0, 0, 0, 0])?,
+        };
+        match item.gid {
+            Some(x) => file.write_all(&x.to_be_bytes())?,
+            None => file.write_all(&[0, 0, 0, 0])?,
+        };
+        file.write_all(&item.size.to_be_bytes())?;
+
+        file.write_all(&hash_to_vec(&item.object_hash))?;
+
+        let filename_length = item.filename.len();
+        debug_assert!(filename_length <= 255);
+
+        // write flag bytes
+        // 1 bit assume valid
+        // 1 bit extended (must be 0 in version 2)
+        // 2 bit stage (during merge)
+        // 12 bit name length if the length is less than 0xFF; otherwise 0xFF
+        file.write_all(&[0b1000_0000, (filename_length as u8)])?;
+
+        file.write_all(item.filename.as_bytes())?;
+
+        // Write at least one NUL byte (and up to 8),
+        // The filename ends with a NUL-terminator, and is padded to the nearest multiple of 8 bytes (for the entry)
+        let bytes_written = 60; // bytes written for an entry
+        let total_bytes = bytes_written + filename_length;
+        let padding = 8 - (total_bytes % 8);
+        let nul_buf = vec![0; padding as usize];
+        file.write_all(&nul_buf)?;
+    }
+
+    Ok(())
 }
 
 /// Parses the index file and writes it to the store as a tree object
@@ -155,11 +241,12 @@ pub fn write_index_to_tree(missing_ok: bool) -> Result<String, String> {
 
         // permissions, space, the filename, null byte, the hex hash (20 bytes)
         // Write as bytes so the hash isn't mangled
+        tree_content.append(&mut "100".as_bytes().to_vec());
         tree_content.append(&mut file.permissions.as_bytes().to_vec());
         tree_content.push(32u8); // space is 32 in ascii
         tree_content.append(&mut file.filename.as_bytes().to_vec());
         tree_content.push(0);
-        tree_content.append(&mut file.object_hash.as_bytes().to_vec());
+        tree_content.append(&mut hash_to_vec(&file.object_hash));
     }
 
     // A tree is a zlib compressed file of a header and a list of file information
@@ -176,93 +263,6 @@ pub fn write_index_to_tree(missing_ok: bool) -> Result<String, String> {
     object_util::write_object_file(&hash, &store_buf);
 
     Ok(hash)
-}
-
-/// Writes the given index structs back to the index file
-pub fn write_index(items: Vec<IndexFile>) -> Result<usize, Error> {
-    // https://doc.rust-lang.org/stable/std/fs/struct.OpenOptions.html#method.truncate
-
-    // Might want to create and replace the index file instead of overwriting it in case of errors
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(INDEX_PATH)
-        .expect("Could not open index file");
-
-    // Write magic number and version
-    file.write(&[0x44, 0x49, 0x52, 0x43, 0x0, 0x0, 0x0, 0x02])?;
-
-    let num_file = items.len() as u32;
-
-    // Write number of files as 4 byte number
-    file.write(&num_file.to_be_bytes())?;
-
-    for item in items.iter() {
-        // Write 6 32-bit (4-byte) info fields
-        // ctime seconds, ctime nanosecond fractions, mtime seconds, mtime nanosecond fractions, dev (null on windows), ino (null on windows)
-        file.write(&item.ctime.to_be_bytes())?;
-        file.write(&item.ctime_fractions.to_be_bytes())?;
-        file.write(&item.mtime.to_be_bytes())?;
-        file.write(&item.mtime_fractions.to_be_bytes())?;
-        match item.dev {
-            Some(x) => file.write(&x.to_be_bytes())?,
-            None => file.write(&[0, 0, 0, 0])?,
-        };
-        match item.ino {
-            Some(x) => file.write(&x.to_be_bytes())?,
-            None => file.write(&[0, 0, 0, 0])?,
-        };
-
-        // Write out mode
-        // 4-bits: object type (regular (1000), symlink(1010), gitlink(1110))
-        // 3-bits: unused
-        // 9-bit: permissions (755 or 644)
-        // assume regular file for now
-        file.write(&[0b1000, 0b0001])?;
-
-        if item.permissions == "644" {
-            file.write(&[0b10_10, 0b0_100])?;
-        } else {
-            file.write(&[0b11_10, 0b1_101])?;
-        }
-
-        // Write 3 4-byte info fields
-        // uid (null on windows), guid (null on windows), file size
-        match item.uid {
-            Some(x) => file.write(&x.to_be_bytes())?,
-            None => file.write(&[0, 0, 0, 0])?,
-        };
-        match item.gid {
-            Some(x) => file.write(&x.to_be_bytes())?,
-            None => file.write(&[0, 0, 0, 0])?,
-        };
-        file.write(&item.size.to_be_bytes())?;
-
-        file.write(&hash_to_vec(&item.object_hash))?;
-
-        let filename_length = item.filename.len();
-        debug_assert!(filename_length <= 255);
-
-        // write flag bytes
-        // 1 bit assume valid
-        // 1 bit extended (must be 0 in version 2)
-        // 2 bit stage (during merge)
-        // 12 bit name length if the length is less than 0xFF; otherwise 0xFF
-        file.write(&[0b1_0_00_0000, (filename_length as u8)])?;
-
-        file.write(item.filename.as_bytes())?;
-        file.write(&[0])?;
-
-        // Write at least one NUL byte (and up to 8),
-        // The filename ends with a NUL-terminator, and is padded to the nearest multiple of 8 bytes (for the entry)
-        let bytes_written = 62; // bytes written for an entry
-        let total_bytes = bytes_written + filename_length + 1;
-        let padding = 8 - (total_bytes % 8);
-        let nul_buf = vec![0; padding as usize];
-        file.write(&nul_buf)?;
-    }
-
-    Ok(0 as usize)
 }
 
 /// Takes first 4 bytes and returns an unsigned int
@@ -283,7 +283,7 @@ fn mode_to_permissions(array: &[u8]) -> &str {
     // 1: type; 2: 000x; 3: xxxx; 4: xxxx
     // 644 => 110 100 100 => 1_1010_0100
     // 755 => 111 101 101 => 1_1110_1101
-    if array[2] == 0b10_10 {
+    if array[1] == 0b1010_0100 {
         "644"
     } else {
         "755"
@@ -300,7 +300,7 @@ fn flags_to_length(array: &[u8]) -> u8 {
     array[1]
 }
 
-/// Convert an object has to a vector for usable in the index file
+/// Convert an object hash to a vector for usable in the index file
 fn hash_to_vec(hash: &str) -> Vec<u8> {
     let mut converted: Vec<u8> = Vec::new();
     for char in hash.chars() {
@@ -329,7 +329,7 @@ fn hash_to_vec(hash: &str) -> Vec<u8> {
 
     let chunks = converted.chunks(2);
     let mut result: Vec<u8> = Vec::new();
-    for chunk in chunks.into_iter() {
+    for chunk in chunks {
         result.push((chunk[0] << 4) + chunk[1]);
     }
     result
@@ -341,13 +341,13 @@ mod tests {
 
     #[test]
     fn test_mode_to_permissons_rw() {
-        let permissions = [0b1000u8, 0b000_1, 0b10_10, 0b0_100];
+        let permissions = [0b1000_0001, 0b1010_0100];
         assert_eq!("644", mode_to_permissions(&permissions))
     }
 
     #[test]
     fn test_mode_to_permissons_rwx() {
-        let permissions = [0b1000u8, 0b000_1, 0b11_10, 0b1_101];
+        let permissions = [0b1000_0001, 0b1110_1101];
         assert_eq!("755", mode_to_permissions(&permissions))
     }
 

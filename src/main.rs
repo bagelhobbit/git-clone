@@ -78,25 +78,12 @@ fn main() {
         _ if command == "update-index" => {
             if args.len() >= 4 {
                 if args[2] == "--add" {
-                    let result = match update_index::add_to_index(&args[3]) {
-                        Ok(s) => s,
-                        Err(s) => s,
-                    };
-
-                    if result == "" {
-                        println!("{}", result);
+                    if let Err(s) = update_index::add_to_index(&args[3]) {
+                        println!("{}", s);
                     }
-                } 
-            }
-            else {
-                let result = match update_index() {
-                    Ok(s) => s,
-                    Err(s) => s,
-                };
-
-                if result == "" {
-                    println!("{}", result);
                 }
+            } else if let Err(s) = update_index() {
+                println!("{}", s);
             }
         }
         _ => println!("{} is not recognized as a valid command", command),

@@ -10,13 +10,13 @@ use super::index_util::IndexFile;
 /// Register file contents in the working tree to the index
 ///
 /// Ignores new files
-pub fn update_index() -> Result<String, String> {
+pub fn update_index() -> Result<(), String> {
     let (_header, items) = index_util::parse_index()?;
 
     let updated_items = update_index_items(items);
-    
+
     match index_util::write_index(updated_items) {
-        Ok(_) => Ok("".to_string()),
+        Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -24,7 +24,7 @@ pub fn update_index() -> Result<String, String> {
 /// Add specified file to the index and update existing items
 ///
 /// Will fail for duplicate items
-pub fn add_to_index(filepath: &str) -> Result<String, String> {
+pub fn add_to_index(filepath: &str) -> Result<(), String> {
     let (_header, mut items) = index_util::parse_index()?;
 
     // filepath should be normalized to avoid false negatives
@@ -42,24 +42,21 @@ pub fn add_to_index(filepath: &str) -> Result<String, String> {
     let mut mtime = 0u32;
     let mut size = 0u32;
 
-    match fs::metadata(filepath) {
-        Ok(metadata) => {
-            ctime = metadata
-                .created()
-                .unwrap_or_else(|_| SystemTime::now())
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_else(|_| Duration::new(0, 0))
-                .as_secs() as u32;
-            mtime = metadata
-                .modified()
-                .unwrap_or_else(|_| SystemTime::now())
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_else(|_| Duration::new(0, 0))
-                .as_secs() as u32;
-            size = metadata.len() as u32;
-        }
-        Err(_) => ()
-    };
+    if let Ok(metadata) = fs::metadata(filepath) {
+        ctime = metadata
+            .created()
+            .unwrap_or_else(|_| SystemTime::now())
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::new(0, 0))
+            .as_secs() as u32;
+        mtime = metadata
+            .modified()
+            .unwrap_or_else(|_| SystemTime::now())
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::new(0, 0))
+            .as_secs() as u32;
+        size = metadata.len() as u32;
+    }
 
     let new_item = IndexFile {
         ctime,
@@ -78,7 +75,7 @@ pub fn add_to_index(filepath: &str) -> Result<String, String> {
     items.push(new_item);
 
     match index_util::write_index(items) {
-        Ok(_) => Ok("".to_string()),
+        Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -86,7 +83,7 @@ pub fn add_to_index(filepath: &str) -> Result<String, String> {
 /// Remove specified file from the index
 #[allow(dead_code)]
 #[allow(unused_variables)]
-pub fn remove_from_index(force: bool) -> Result<String, String> {
+pub fn remove_from_index(force: bool) -> Result<(), String> {
     todo!()
 }
 
@@ -101,19 +98,16 @@ fn update_index_items(items: Vec<IndexFile>) -> Vec<IndexFile> {
 
         // metadata also has dev, ino, uid, and gid fields but since windows doesn't use them
         // I'm ignoring it for now
-        match fs::metadata(&item.filename) {
-            Ok(metadata) => {
-                mtime = metadata
-                    .modified()
-                    .unwrap_or_else(|_| SystemTime::now())
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_else(|_| Duration::new(0, 0))
-                    .as_secs() as u32;
+        if let Ok(metadata) = fs::metadata(&item.filename) {
+            mtime = metadata
+                .modified()
+                .unwrap_or_else(|_| SystemTime::now())
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::new(0, 0))
+                .as_secs() as u32;
 
-                size = metadata.len() as u32;
-            }
-            Err(_) => (),
-        };
+            size = metadata.len() as u32;
+        }
 
         let updated = IndexFile {
             mtime,
